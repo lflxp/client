@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 	"context"
 	"strings"
 	"github.com/lflxp/dbui/etcd"
@@ -78,49 +79,70 @@ type Reply struct {
 	PXE 		string
 	REBOOT  	string
 	Ping		bool
+	Err 		error
 }
 
+var waitgroup sync.WaitGroup
+
 func main() { 
-	
-	
-		d := client.NewMultipleServersDiscovery(Clientxx)
-		option := client.DefaultOption
-		option.Retries = 10
-		xclient := client.NewXClient("Config",client.Failover,client.RandomSelect,d,option)
-		defer xclient.Close()
-		args := Config{
-			User:"users",
-			Password:"passwords",
-			Type:"R720XD",
-			Sn:"G123G",
-			ServerApi:"http://portal.qiyi.domain",
-		}
-
-	for i:=0;i<1000;i++ {
-		reply := &Reply{}
+	chans := make(chan int)
+	for {
+		for i:=0;i<100;i++ {	
+			waitgroup.Add(1)
+			go func(){
+				d := client.NewMultipleServersDiscovery(Clientxx)
+				option := client.DefaultOption
+				// option.Retries = 10
+				// option.ConnectTimeout = 5
+				// option.ReadTimeout = 5
+				// option.WriteTimeout = 5
+				xclient := client.NewXClient("Config",client.Failfast,client.RandomSelect,d,option)
+				// defer xclient.Close()
+				args := Config{
+					User:"users",
+					Password:"passwords",
+					Type:"R720XD",
+					Sn:"G4MTGY1",
+					ServerApi:"http://portal.qiyi.domain",
+				}
 		
-		call,err := xclient.Go(context.Background(),"Run",args,reply,nil)
-		if err != nil {
-			log.Println("error:",err.Error())
+			
+				reply := &Reply{}
+				
+				call,err := xclient.Go(context.Background(),"Run",args,reply,nil)
+				if err != nil {
+					log.Println("error:",err.Error())
+				}
+			
+				replyCall := <- call.Done
+				if replyCall.Error != nil {
+					log.Fatalf("failed to call: %v",replyCall.Error)
+				} else {
+					if reply.Err != nil {
+						log.Printf(reply.Err.Error())
+					} else {
+						log.Printf("%t %s %s",reply.Ping,reply.PXE,reply.REBOOT)
+					}
+				} 
+		
+				xclient.Close()
+				waitgroup.Done()
+			}()
+	
+			// reply := &Reply{}
+			// ctx := context.WithValue(context.Background(),share.ReqMetaDataKey,make(map[string]string))	
+			// err := xclient.Call(ctx,"Run",args,reply)
+			// if err != nil {
+			// 	log.Fatal("error:",err.Error())
+			// }
+		
+			// log.Printf("%t %s %s",reply.Ping,reply.PXE,reply.REBOOT)
 		}
-	
-		replyCall := <- call.Done
-		if replyCall.Error != nil {
-			log.Fatalf("failed to call: %v",replyCall.Error)
-		} else {
-			log.Printf("%t %s %s",reply.Ping,reply.PXE,reply.REBOOT)
-		} 
-
-		// reply := &Reply{}
-		// ctx := context.WithValue(context.Background(),share.ReqMetaDataKey,make(map[string]string))	
-		// err := xclient.Call(ctx,"Run",args,reply)
-		// if err != nil {
-		// 	log.Fatal("error:",err.Error())
-		// }
-	
-		// log.Printf("%t %s %s",reply.Ping,reply.PXE,reply.REBOOT)
+		waitgroup.Wait()
 	}
+	
 
+	<-chans
 	// for i:=0;i<1000;i++ {
 	// 	reply := &Reply{}
 	// 	ctx := context.WithValue(context.Background(),share.ReqMetaDataKey,make(map[string]string))	
